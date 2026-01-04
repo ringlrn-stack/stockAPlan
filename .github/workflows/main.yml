@@ -23,7 +23,7 @@ jobs:
         run: pip install requests pandas openpyxl
 
       - name: 运行抓取脚本
-        run: python auction_agent.py
+        run: python init_db.py
 
       - name: 自动上传 Excel 报告
         uses: actions/upload-artifact@v4
