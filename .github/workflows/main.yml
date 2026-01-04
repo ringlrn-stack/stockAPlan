@@ -2,18 +2,18 @@ name: A-Stock Auction Agent
 
 on:
   schedule:
-    - cron: '32 1 * * 1-5' # 国际标准时间 01:32，对应北京时间 09:32
-  workflow_dispatch: # 允许你手动点击按钮运行
+    - cron: '32 1 * * 1-5' # 对应北京时间 09:32
+  workflow_dispatch: # 允许手动运行
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: 检查代码
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # 顺便升级到 v4
 
       - name: 安装 Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # 顺便升级到 v5
         with:
           python-version: '3.9'
 
@@ -24,7 +24,7 @@ jobs:
         run: python auction_agent.py
 
       - name: 自动上传结果
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # 关键点：这里必须改成 v4
         with:
           name: Auction-Report
           path: daily_report.xlsx
