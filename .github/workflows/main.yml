@@ -1,4 +1,4 @@
-name: A-Stock Auction Agent
+name: A-Stock Agent Simple
 
 on:
   schedule:
@@ -6,35 +6,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  run:
     runs-on: ubuntu-latest
-    permissions: # 赋予 Action 写权限
-      contents: write
     steps:
-      - name: 检查代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-
-      - name: 安装依赖
-        run: pip install requests pandas openpyxl
-
-      - name: 运行抓取脚本
-        run: python init_db.py
-
-      - name: 自动上传 Excel 报告
-        uses: actions/upload-artifact@v4
+      - run: pip install requests pandas openpyxl
+      - run: python auction_agent.py
+      - uses: actions/upload-artifact@v4
         with:
-          name: Auction-Report
+          name: Report
           path: daily_report.xlsx
-
-      - name: 将更新后的数据库保存回仓库
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add history_auction.csv
-          git commit -m "Update history database [skip ci]" || echo "No changes to commit"
-          git push
