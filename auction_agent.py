@@ -32,9 +32,8 @@ def run_task():
         df_today = pd.DataFrame(stocks)
         df_today.rename(columns={'f12': 'code', 'f14': 'name', 'f46': 'today_auction'}, inplace=True)
         df_today['today_auction'] = pd.to_numeric(df_today['today_auction'], errors='coerce').fillna(0)
-        
+
         # --- 3. 匹配昨日数据并计算量比 ---
-        # 将今日数据与历史数据库合并 (Left Join)
         df_merge = pd.merge(df_today, df_history[['code', 'last_auction']], on='code', how='left')
         
         # 计算竞昨量比
@@ -45,13 +44,18 @@ def run_task():
 
         df_merge['竞昨量比'] = df_merge.apply(calc_ratio, axis=1)
         
-        # 筛选：今日竞价 > 2000万 且 排序
+        # 【调试修改】：如果今天没开盘，强制取前 10 只展示，不筛选 2000 万
         df_report = df_merge[df_merge['today_auction'] >= 20000000].copy()
-        df_report = df_report.sort_values(by="竞昨量比", ascending=False, key=lambda x: pd.to_numeric(x, errors='coerce'))
+        
+        if df_report.empty:
+            print("当前无 2000万以上数据，强制导出前 10 只股票作为测试...")
+            df_report = df_merge.head(10).copy() 
 
-        # 整理输出表格
+        # 整理输出表格 (加入‘昨日竞价’字段方便观察)
         df_report['今日竞价(万)'] = (df_report['today_auction'] / 10000).round(2)
         df_report['昨日竞价(万)'] = (pd.to_numeric(df_report['last_auction'], errors='coerce') / 10000).round(2)
+        # ... 后面保存代码不变
+        
         final_report = df_report[['code', 'name', '今日竞价(万)', '昨日竞价(万)', '竞昨量比']]
         
         # 保存 Excel 报告
