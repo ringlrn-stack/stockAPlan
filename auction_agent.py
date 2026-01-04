@@ -1,63 +1,69 @@
 import requests
 import pandas as pd
-import time
+import os
 from datetime import datetime
 
 def run_task():
-    print(f"任务启动时间: {datetime.now()}")
-    
+    db_file = "history_auction.csv"
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    print(f"任务启动: {today_str}")
+
+    # --- 1. 加载本地历史数据库 ---
+    if os.path.exists(db_file):
+        df_history = pd.read_csv(db_file, dtype={'code': str})
+        print(f"成功加载历史数据库，包含 {len(df_history)} 条记录")
+    else:
+        df_history = pd.DataFrame(columns=['code', 'name', 'last_auction'])
+        print("未发现历史数据库，今日将创建新库。")
+
+    # --- 2. 获取今日实时竞价数据 (一次性请求) ---
     list_url = "https://push2.eastmoney.com/api/qt/clist/get"
     params = {
-        "pn": "1", "pz": "50", "po": "1", "np": "1",
+        "pn": "1", "pz": "5000", "po": "1", "np": "1",
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fid": "f6", # 改为按成交额排序，确保非交易日也能拿到数据
+        "fid": "f46", 
         "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23",
-        "fields": "f12,f13,f14,f46,f6" 
+        "fields": "f12,f14,f46" # 代码, 名称, 今日竞价额
     }
     
     try:
-        resp = requests.get(list_url, params=params).json()
+        resp = requests.get(list_url, params=params, timeout=10).json()
         stocks = resp['data']['diff']
-        df = pd.DataFrame(stocks)
+        df_today = pd.DataFrame(stocks)
+        df_today.rename(columns={'f12': 'code', 'f14': 'name', 'f46': 'today_auction'}, inplace=True)
+        df_today['today_auction'] = pd.to_numeric(df_today['today_auction'], errors='coerce').fillna(0)
         
-        # 将字符串转为数字
-        df['f46'] = pd.to_numeric(df['f46'], errors='coerce').fillna(0)
+        # --- 3. 匹配昨日数据并计算量比 ---
+        # 将今日数据与历史数据库合并 (Left Join)
+        df_merge = pd.merge(df_today, df_history[['code', 'last_auction']], on='code', how='left')
         
-        # 筛选逻辑：如果今天没开盘（f46全是0），我们就取成交额前5名演示
-        df_filtered = df[df['f46'] >= 20000000].copy()
+        # 计算竞昨量比
+        def calc_ratio(row):
+            if row['last_auction'] and row['last_auction'] > 0:
+                return round(row['today_auction'] / row['last_auction'], 2)
+            return "N/A"
+
+        df_merge['竞昨量比'] = df_merge.apply(calc_ratio, axis=1)
         
-        if df_filtered.empty:
-            print("注意：未找到竞价额 > 2000万的股票，切换至『演示模式』获取成交额前5名...")
-            df_filtered = df.head(5).copy()
+        # 筛选：今日竞价 > 2000万 且 排序
+        df_report = df_merge[df_merge['today_auction'] >= 20000000].copy()
+        df_report = df_report.sort_values(by="竞昨量比", ascending=False, key=lambda x: pd.to_numeric(x, errors='coerce'))
 
-        results = []
-        for _, row in df_filtered.iterrows():
-            # 获取昨日数据逻辑
-            trend_url = f"https://push2.eastmoney.com/api/qt/stock/trends2/get?secid={row['f13']}.{row['f12']}&fields1=f1&fields2=f51,f56"
-            t_resp = requests.get(trend_url).json()
-            
-            yesterday_val = None
-            if t_resp.get('data') and 'trends' in t_resp['data']:
-                trends = t_resp['data']['trends']
-                auction_vals = [float(x.split(',')[1]) for x in trends if "09:30" in x]
-                if len(auction_vals) >= 2:
-                    yesterday_val = auction_vals[-2]
+        # 整理输出表格
+        df_report['今日竞价(万)'] = (df_report['today_auction'] / 10000).round(2)
+        df_report['昨日竞价(万)'] = (pd.to_numeric(df_report['last_auction'], errors='coerce') / 10000).round(2)
+        final_report = df_report[['code', 'name', '今日竞价(万)', '昨日竞价(万)', '竞昨量比']]
+        
+        # 保存 Excel 报告
+        final_report.to_excel("daily_report.xlsx", index=False)
+        print(f"今日报告已生成，筛选出 {len(final_report)} 只符合条件的股票")
 
-            ratio = round(row['f46'] / yesterday_val, 2) if yesterday_val and yesterday_val > 0 else "N/A"
-            
-            results.append({
-                "代码": row['f12'], 
-                "名称": row['f14'],
-                "今日竞价(万)": round(row['f46'] / 10000, 2),
-                "昨日竞价(万)": round(yesterday_val / 10000, 2) if yesterday_val else "N/A",
-                "竞昨量比": ratio
-            })
-            time.sleep(0.1)
-
-        result_df = pd.DataFrame(results)
-        # 强制保存为这个名字，与 .yml 保持一致
-        result_df.to_excel("daily_report.xlsx", index=False)
-        print(f"成功生成报告，包含 {len(result_df)} 行数据")
+        # --- 4. 关键：更新数据库，供明天使用 ---
+        # 无论今天是否符合2000万，都记录所有股票的竞价额，作为明天的“昨日数据”
+        df_save = df_today[['code', 'name', 'today_auction']].copy()
+        df_save.rename(columns={'today_auction': 'last_auction'}, inplace=True)
+        df_save.to_csv(db_file, index=False)
+        print("数据库已更新，数据已持久化。")
 
     except Exception as e:
         print(f"运行出错: {e}")
