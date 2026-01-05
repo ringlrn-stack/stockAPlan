@@ -4,70 +4,74 @@ import time
 from datetime import datetime
 
 def run_task():
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    print(f"任务启动: {today_str}")
+    print(f"任务启动: {datetime.now()}")
     
-    # 1. 获取名单 (一次抓取 500 只，确保覆盖面)
+    # 1. 先拿名单 (用成交额排序取前 300 只，保证是活跃股)
     list_url = "https://push2.eastmoney.com/api/qt/clist/get"
     params = {
-        "pn": "1", "pz": "500", "po": "1", "np": "1",
+        "pn": "1", "pz": "300", "po": "1", "np": "1",
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
         "fid": "f6", "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23",
-        "fields": "f12,f13,f14" 
+        "fields": "f12,f13,f14"
     }
     
     try:
-        resp = requests.get(list_url, params=params, timeout=10).json()
-        stocks = resp['data']['diff']
+        stocks = requests.get(list_url, params=params, timeout=10).json()['data']['diff']
         results = []
 
-        print(f"开始精确筛选符合 2000万 门槛的股票...")
+        print(f"候选池 {len(stocks)} 只，开始核查“第0笔”交易明细...")
 
         for s in stocks:
             secid = f"{s['f13']}.{s['f12']}"
-            # ndays=5 确保能获取到今天和上一个交易日的数据
-            trend_url = f"https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid={secid}&fields1=f1&fields2=f51,f56&ndays=5"
+            # pos=0 表示从第0条开始取，pz=1 表示只取1条
+            # 这就是直接要把“竞价”那一条取出来
+            tick_url = f"https://push2.eastmoney.com/api/qt/stock/details/get?secid={secid}&pos=0&pz=1&fields1=f1&fields2=f51,f52,f53,f54,f55"
             
             try:
-                t_resp = requests.get(trend_url, timeout=4).json()
-                trends = t_resp['data']['trends']
-                # 寻找 09:30 的集合竞价点
-                auction_data = [x.split(',') for x in trends if "09:30" in x]
+                tick_res = requests.get(tick_url, timeout=3).json()
+                details = tick_res['data']['details']
                 
-                if len(auction_data) >= 2:
-                    today_val = float(auction_data[-1][1])    # 今日竞价
-                    yesterday_val = float(auction_data[-2][1]) # 昨日竞价
+                if details:
+                    # details[0] 格式示例: "09:25:04,15.60,2850,0,4450000,..."
+                    # 逗号分隔的第 5 个字段 (index 4) 通常是成交金额(元)，或者是 价格*量 手动算
+                    first_trade = details[0].split(',')
                     
-                    # --- 严格筛选：只有符合条件的才放入 results ---
-                    if today_val >= 20000000:
-                        ratio = round(today_val / yesterday_val, 2) if yesterday_val > 0 else 0
+                    # 时间校验：必须是 09:25 或 09:30 之前的
+                    trade_time = first_trade[0]
+                    
+                    # 东方财富 details 字段说明：
+                    # 0:时间, 1:价格, 2:手数, 3:笔数, 4:成交额(注意：有的票不返回额，需 价格*手数*100)
+                    price = float(first_trade[1])
+                    vol_hand = float(first_trade[2]) # 手数
+                    
+                    # 计算竞价额 (元) = 价格 * 手数 * 100
+                    auction_amount = price * vol_hand * 100
+                    
+                    if auction_amount >= 20000000: # 2000万
                         results.append({
-                            "日期": today_str,
-                            "代码": s['f12'], 
+                            "代码": s['f12'],
                             "名称": s['f14'],
-                            "今日竞价(万)": round(today_val / 10000, 2),
-                            "昨日竞价(万)": round(yesterday_val / 10000, 2),
-                            "竞昨量比": ratio
+                            "竞价时间": trade_time,
+                            "竞价成交额(万)": round(auction_amount / 10000, 2)
                         })
             except:
-                continue
+                pass
+            
+            # 这种精确接口不能太快，稍微慢一点点
             time.sleep(0.05)
 
-        # --- 保存结果逻辑 ---
         if results:
-            df = pd.DataFrame(results).sort_values(by="竞昨量比", ascending=False)
-            print(f"筛选完成，共 {len(df)} 只股票入选。")
+            df = pd.DataFrame(results).sort_values(by="竞价成交额(万)", ascending=False)
+            df.to_excel("daily_report.xlsx", index=False)
+            df.to_csv("daily_report.csv", index=False, encoding='utf_8_sig')
+            print(f"成功！筛选出 {len(df)} 只竞价超 2000万 的股票。")
         else:
-            # 如果没有符合条件的，创建一个只有表头的空 DataFrame
-            print("今日没有股票符合竞价 > 2000万的条件。")
-            df = pd.DataFrame(columns=["日期", "代码", "名称", "今日竞价(万)", "昨日竞价(万)", "竞昨量比"])
+            print("没有符合条件的股票。")
+            # 生成空表防止报错
+            pd.DataFrame(columns=["代码", "名称", "竞价时间", "竞价成交额(万)"]).to_excel("daily_report.xlsx")
 
-        # 保存为 Excel 和 CSV
-        df.to_excel("daily_report.xlsx", index=False)
-        df.to_csv("daily_report.csv", index=False, encoding='utf_8_sig')
-        
     except Exception as e:
-        print(f"程序运行出错: {e}")
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     run_task()
