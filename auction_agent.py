@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 
 # 获取 GitHub Secrets 中的 Token
-TOKEN = os.getenv("TUSHARE_TOKEN")
+TOKEN = os.getenv("91dba4a6bb22fc1b9970ae8005d5746a5120a0a652cc7df80fea8469")
 # 如果你是本地测试，请手动把 Token 填在下面：
 # TOKEN = "你的_Tushare_Token_粘贴在这里"
 
