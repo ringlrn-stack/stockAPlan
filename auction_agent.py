@@ -4,122 +4,129 @@ import os
 import time
 from datetime import datetime, timedelta
 
-# 获取 GitHub Secrets 中的 Token
+# 1. 获取 Token
 TOKEN = os.getenv("TUSHARE_TOKEN")
-# 如果你是本地测试，请手动把 Token 填在下面：
-# TOKEN = "你的_Tushare_Token_粘贴在这里"
-
 if not TOKEN:
-    raise ValueError("未找到 Tushare Token，请在 GitHub Secrets 中配置！")
+    print("【严重错误】未读取到 Token！请检查 GitHub Secrets 设置。")
+    exit()
+
+# 打印 Token 前几位用于调试 (不打印完整的以保密)
+print(f"Token 读取成功，前缀: {TOKEN[:5]}***")
 
 pro = ts.pro_api(TOKEN)
 
 def get_trading_date(offset=0):
-    """获取最近的交易日（自动处理周末和节假日）"""
-    # 获取过去 20 天的交易日历
-    end_date = datetime.now().strftime('%Y%m%d')
-    start_date = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
-    
-    cal = pro.trade_cal(exchange='SSE', start_date=start_date, end_date=end_date, is_open='1')
-    trade_dates = cal['cal_date'].tolist()
-    
-    # -1 代表最后一个交易日（即“今天”或“最近收盘日”）
-    # -2 代表上一个交易日
+    """获取交易日期"""
+    end = datetime.now().strftime('%Y%m%d')
+    start = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
     try:
-        return trade_dates[offset - 1]
-    except:
+        cal = pro.trade_cal(exchange='SSE', start_date=start, end_date=end, is_open='1')
+        dates = cal['cal_date'].tolist()
+        return dates[offset - 1] if len(dates) >= abs(offset) else None
+    except Exception as e:
+        print(f"【API错误】获取日历失败: {e}")
         return None
 
 def run_task():
     print(f"任务启动: {datetime.now()}")
     
-    # 1. 确定日期：今天（或最近交易日）和昨天（上个交易日）
-    today_date = get_trading_date(0)   # 今天
-    yesterday_date = get_trading_date(-1) # 昨天
+    # 2. 确定日期
+    today = get_trading_date(0)
+    yesterday = get_trading_date(-1)
+    print(f"正在分析日期 -> 今天: {today}, 昨天: {yesterday}")
     
-    print(f"正在获取数据... 今日: {today_date}, 昨日对比: {yesterday_date}")
-    
-    if not today_date or not yesterday_date:
-        print("无法获取交易日历，任务终止。")
+    if not today or not yesterday:
+        print("日期获取失败，终止。")
         return
 
-    # 2. 获取全市场“开盘成交额”
-    # Tushare 的 daily 接口非常快，直接请求全市场
-    # 'amount' 是全天成交额，'open' 是开盘价
-    # 为了精准获取“竞价成交额”，我们可以使用 'stk_mins' (1分钟线) 的 09:30 数据
-    # 或者，如果你的积分足够，直接用 'bak_daily' (备用行情) 里面有精准的 'vol_open' (开盘量)
-    
-    # 这里我们使用最通用的方案：直接请求今日的 1分钟线 (需要一定积分权限)
-    # 为了节省积分和请求次数，我们先拉取一个基础列表，只查活跃股
-    
-    # --- 方案 A：使用每日行情接口 (Daily) 近似计算 ---
-    # 大多数付费用户都有 daily 权限。
-    # 开盘金额 ≈ 开盘价 * 开盘量 (注：Daily接口通常不给专门的开盘量，只给全天量)
-    
-    # --- 方案 B (推荐)：使用分钟线接口 (stk_mins) ---
-    # 这是最准的。我们需要循环请求，所以先筛选。
-    
-    # 先拿今日全市场基础行情，按金额排序取前 200 只
-    df_daily = pro.daily(trade_date=today_date, fields='ts_code,name,amount')
-    if df_daily.empty:
-        print("今日行情未更新（可能尚未收盘或积分不足），尝试获取实时快照...")
-        # 注意：Tushare 盘中实时接口需要更高权限，建议盘后复盘使用
-        # 如果必须盘中跑，此处需换回 requests 方式，但既然你付了费，建议用 Tushare 的 snapshot
+    # 3. 获取基础列表 (改用最基础的 daily 接口，只要有积分都能调)
+    print("正在拉取今日全市场行情列表...")
+    try:
+        # 先拉取成交额前 300 名的股票，减少请求压力
+        df_daily = pro.daily(trade_date=today, fields='ts_code,name,amount')
+        if df_daily.empty:
+            print("【警告】今日行情列表为空！可能 Tushare 数据尚未入库，或今日是非交易日。")
+            # 尝试拉取昨天的数据作为测试，防止空跑
+            print("尝试切换到上一交易日数据进行测试...")
+            df_daily = pro.daily(trade_date=yesterday, fields='ts_code,name,amount')
+            today = yesterday # 修正日期以便测试
+            
+        if df_daily.empty:
+            print("无法获取任何行情数据，任务终止。")
+            return
+            
+        # 按成交额排序取前 200 只
+        df_daily = df_daily.sort_values(by='amount', ascending=False).head(200)
+        target_codes = df_daily['ts_code'].tolist()
+        print(f"已锁定成交额前 {len(target_codes)} 只股票，开始精确查询竞价...")
+
+    except Exception as e:
+        print(f"【API错误】获取列表失败: {e}")
         return
 
-    # 筛选前 300 名活跃股进行精细查询
-    df_daily = df_daily.sort_values(by='amount', ascending=False).head(300)
-    target_codes = df_daily['ts_code'].tolist()
-    
     results = []
-    print(f"开始通过专业接口获取 {len(target_codes)} 只股票的精准竞价数据...")
-
-    # Tushare 支持批量获取分钟线，我们分批请求，每次 50 只
-    # 格式: 000001.SZ
+    
+    # 4. 循环查询分钟线 (这是最稳的付费接口)
+    # Tushare 单次支持 50-100 只代码，我们分批查
     chunk_size = 50
     for i in range(0, len(target_codes), chunk_size):
         chunk = target_codes[i:i+chunk_size]
         codes_str = ",".join(chunk)
         
         try:
-            # 获取今日 09:30 的分钟线
-            df_today_min = pro.stk_mins(ts_code=codes_str, start_date=f"{today_date} 09:30:00", end_date=f"{today_date} 09:30:00", freq='1min')
-            # 获取昨日 09:30 的分钟线
-            df_yest_min = pro.stk_mins(ts_code=codes_str, start_date=f"{yesterday_date} 09:30:00", end_date=f"{yesterday_date} 09:30:00", freq='1min')
+            # 构造时间: 比如 20260105 09:30:00
+            t_start = f"{today} 09:30:00"
+            t_end   = f"{today} 09:30:00"
+            y_start = f"{yesterday} 09:30:00"
+            y_end   = f"{yesterday} 09:30:00"
             
+            # 获取今日 09:30 数据
+            df_t = pro.stk_mins(ts_code=codes_str, start_date=t_start, end_date=t_end, freq='1min')
+            # 获取昨日 09:30 数据
+            df_y = pro.stk_mins(ts_code=codes_str, start_date=y_start, end_date=y_end, freq='1min')
+            
+            if df_t.empty:
+                print(f"批次 {i} 返回空数据，权限可能不足或数据未更新。")
+                continue
+
             # 合并数据
-            # 1分钟线的 amount 就是该分钟的成交额，即竞价+开盘瞬间，非常接近真实竞价
-            merged = pd.merge(df_today_min[['ts_code', 'amount']], df_yest_min[['ts_code', 'amount']], on='ts_code', suffixes=('_today', '_yest'))
+            merged = pd.merge(df_t[['ts_code', 'amount']], df_y[['ts_code', 'amount']], on='ts_code', suffixes=('_curr', '_prev'))
             
             for _, row in merged.iterrows():
-                today_val = row['amount_today']
-                yest_val = row['amount_yest']
+                curr_amt = row['amount_curr'] # 分钟线里的 amount 就是成交额
+                prev_amt = row['amount_prev']
                 
                 # 门槛 2000万
-                if today_val >= 20000000:
-                    ratio = round(today_val / yest_val, 2) if yest_val > 0 else 0
-                    # 找回名字
-                    name = df_daily[df_daily['ts_code'] == row['ts_code']]['name'].values[0]
+                if curr_amt >= 20000000:
+                    # 找回名称
+                    name_row = df_daily[df_daily['ts_code'] == row['ts_code']]
+                    name = name_row['name'].values[0] if not name_row.empty else "未知"
+                    
+                    ratio = round(curr_amt / prev_amt, 2) if prev_amt > 0 else 0
                     
                     results.append({
                         "代码": row['ts_code'],
                         "名称": name,
-                        "今日竞价(万)": round(today_val / 10000, 2),
-                        "昨日竞价(万)": round(yest_val / 10000, 2),
+                        "今日竞价(万)": round(curr_amt / 10000, 2),
+                        "昨日竞价(万)": round(prev_amt / 10000, 2),
                         "竞昨量比": ratio
                     })
-        except Exception as e:
-            print(f"API 请求异常: {e}")
-            time.sleep(1) # Tushare 也有频率限制，稍微歇一下
             
-    # 保存结果
+            print(f"批次 {i} 处理完毕，当前累计入选: {len(results)} 只")
+            time.sleep(0.3) # 遵守 Tushare 频率限制 (付费用户通常是每分钟几百次，这里很安全)
+            
+        except Exception as e:
+            print(f"【API异常】在处理批次 {i} 时出错: {e}")
+            time.sleep(1)
+
+    # 5. 保存结果
     if results:
         final_df = pd.DataFrame(results).sort_values(by='竞昨量比', ascending=False)
         final_df.to_excel("daily_report.xlsx", index=False)
         final_df.to_csv("daily_report.csv", index=False, encoding='utf_8_sig')
-        print(f"报告生成成功！共筛选出 {len(final_df)} 只股票。")
+        print(f"\nSUCCESS! 成功生成报告，包含 {len(final_df)} 只股票。")
     else:
-        print("无符合条件股票。")
+        print("\n没有任何股票符合筛选条件 (或API数据获取失败)。生成空文件以防止报错。")
         pd.DataFrame(columns=["代码", "名称", "今日竞价(万)", "昨日竞价(万)", "竞昨量比"]).to_excel("daily_report.xlsx")
 
 if __name__ == "__main__":
