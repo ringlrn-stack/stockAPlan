@@ -1,32 +1,25 @@
-name: A-Stock Auction Agent
+name: Tushare Auction Agent
 
 on:
   schedule:
-    - cron: '32 1 * * 1-5' # 北京时间 09:32 运行
-  workflow_dispatch:      # 允许手动点击按钮运行
+    - cron: '35 1 * * 1-5' # 建议 09:35 运行，等待 Tushare 数据同步
+  workflow_dispatch:
 
 jobs:
-  build_job:              # 任务名称
+  build:
     runs-on: ubuntu-latest
+    env:
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}  # <--- 关键：注入 Token
     steps:
-      - name: 1. 拉取代码
-        uses: actions/checkout@v4
-
-      - name: 2. 安装Python环境
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-
-      - name: 3. 安装必要的插件
-        run: pip install requests pandas openpyxl
-
-      - name: 4. 执行抓取脚本
-        run: python auction_agent.py
-
-      - name: 5. 上传结果文件
-        uses: actions/upload-artifact@v4
+      - run: pip install tushare pandas openpyxl # 安装 tushare 库
+      - run: python auction_agent.py
+      - uses: actions/upload-artifact@v4
         with:
-          name: Auction-Results
+          name: Auction-Report
           path: |
             daily_report.xlsx
             daily_report.csv
