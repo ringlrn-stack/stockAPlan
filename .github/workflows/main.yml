@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}  # <--- 关键：注入 Token
+      TUSHARE_TOKEN: ${{ secrets.91dba4a6bb22fc1b9970ae8005d5746a5120a0a652cc7df80fea8469 }}  # <--- 关键：注入 Token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
