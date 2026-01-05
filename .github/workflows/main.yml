@@ -15,7 +15,9 @@ jobs:
           python-version: '3.9'
       - run: pip install requests pandas openpyxl
       - run: python auction_agent.py
-      - uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
-          name: Report
-          path: daily_report.xlsx
+          name: Auction-Results # 下载包的名字
+          path: |
+            daily_report.xlsx
+            daily_report.csv
