@@ -17,7 +17,6 @@ jobs:
       - run: python auction_agent.py
         uses: actions/upload-artifact@v4
         with:
-          name: Auction-Results # 下载包的名字
           path: |
             daily_report.xlsx
             daily_report.csv
