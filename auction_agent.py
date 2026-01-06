@@ -26,13 +26,14 @@ def get_strategy_dates():
     # 获取日历
     end_str = now_bj.strftime('%Y%m%d')
     start_str = (now_bj - timedelta(days=30)).strftime('%Y%m%d')
+    print(f"还没开始trade_cal：{start_str},{end_str}")
     
     try:
-        print(f"准备开始trade_cal-{start_str},{end_str}")
+        print(f"准备开始trade_cal：{start_str},{end_str}")
         cal = pro.trade_cal(exchange='SSE', start_date=start_str, end_date=end_str, is_open='1')
-        print("pro.trade_cal")
+        print("pro.trade_cal调用")
         dates = cal.sort_values(by='cal_date', ascending=True)['cal_date'].tolist()
-        print("cal.sort_values")
+        print("cal.sort_values调用")
         
         if len(dates) < 3:
             return None, None, None
