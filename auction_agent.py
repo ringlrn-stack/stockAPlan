@@ -29,7 +29,9 @@ def get_strategy_dates():
     
     try:
         cal = pro.trade_cal(exchange='SSE', start_date=start_str, end_date=end_str, is_open='1')
+        print("pro.trade_cal")
         dates = cal.sort_values(by='cal_date', ascending=True)['cal_date'].tolist()
+        print("cal.sort_values")
         
         if len(dates) < 3:
             return None, None, None
