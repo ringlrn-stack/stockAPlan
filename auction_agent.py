@@ -20,7 +20,7 @@ def get_strategy_dates():
     - 09:30 之后: 竞价已出 -> 实战模式 (对比 [今] vs [昨])
     """
     # 修正 GitHub Actions 时区到北京时间
-    now_bj = datetime.now() + timedelta(hours=8)
+    now_bj = datetime.now()
     print(f"🕒 当前北京时间: {now_bj.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # 获取日历
