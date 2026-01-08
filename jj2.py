@@ -10,8 +10,8 @@ if not TOKEN:
     print("【错误】未找到 Token，请检查 GitHub Secrets 或环境变量")
     exit()
 
-# 修改提示信息
-print("启动【月度竞价妖股扫描】(策略: 量比>=7 & 金额>=2700万, 需二次确认)...")
+# 修改提示信息以反映新策略
+print("启动【月度竞价妖股扫描】(策略: 量比>=5 & 金额>=5000万, 需二次确认)...")
 pro = ts.pro_api(TOKEN)
 
 # 结果保存文件名
@@ -121,11 +121,11 @@ def run_scanner():
         merged['ratio'] = merged['amt_curr'] / merged['amt_prev']
         
         # --- 核心筛选条件 (已修改) ---
-        # 1. 竞价金额 >= 2700万 (27,000,000)
-        # 2. 量比 >= 7
+        # 1. 竞价金额 >= 5000万 (50,000,000)
+        # 2. 量比 >= 5
         daily_hits = merged[
-            (merged['amt_curr'] >= 27000000) & 
-            (merged['ratio'] >= 7)
+            (merged['amt_curr'] >= 50000000) & 
+            (merged['ratio'] >= 5)
         ].copy()
         
         if not daily_hits.empty:
