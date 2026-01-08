@@ -11,7 +11,7 @@ if not TOKEN:
     print("【错误】未找到 Token，请检查 GitHub Secrets 或环境变量")
     exit()
 
-print("启动【月度竞价妖股扫描】(策略: 量比>=7 & 金额>=1000万, 需二次确认)...")
+print("启动【月度竞价妖股扫描】(策略: 量比>=7 & 金额>=2000万, 需二次确认)...")
 pro = ts.pro_api(TOKEN)
 
 # 结果保存文件名
@@ -117,10 +117,10 @@ def run_scanner():
         merged['ratio'] = merged['amt_curr'] / merged['amt_prev']
         
         # --- 筛选单日符合条件的股票 ---
-        # 条件1: 竞价金额 >= 1000万 (10,000,000)
+        # 条件1: 竞价金额 >= 2000万 (20,000,000)
         # 条件2: 量比 >= 7
         daily_hits = merged[
-            (merged['amt_curr'] >= 10000000) & 
+            (merged['amt_curr'] >= 20000000) & 
             (merged['ratio'] >= 7)
         ].copy()
         
@@ -131,8 +131,8 @@ def run_scanner():
             daily_hits = pd.merge(daily_hits, df_basic, on='ts_code', how='left')
             
             # 格式化
-            daily_hits['今日竞价(万)'] = round(daily_hits['amt_curr'] / 10000, 2)
-            daily_hits['昨日竞价(万)'] = round(daily_hits['amt_prev'] / 10000, 2)
+            daily_hits['今日竞价(万)'] = round(daily_hits['amt_curr'] / 0, 2)
+            daily_hits['昨日竞价(万)'] = round(daily_hits['amt_prev'] / 0, 2)
             daily_hits['量比'] = round(daily_hits['ratio'], 2)
             
             # 将这些记录存入总池子
